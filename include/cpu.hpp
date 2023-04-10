@@ -15,14 +15,14 @@
 */
 
 #pragma once
-#include "smbios_mdrv2.hpp"
+#include "smbios.hpp"
 
+#include <xyz/openbmc_project/Inventory/Item/Cpu/server.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
 #include <xyz/openbmc_project/Inventory/Connector/Slot/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/LocationCode/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Revision/server.hpp>
-#include <xyz/openbmc_project/Inventory/Item/Cpu/server.hpp>
 #include <xyz/openbmc_project/Inventory/Item/server.hpp>
 
 namespace phosphor
@@ -30,7 +30,6 @@ namespace phosphor
 
 namespace smbios
 {
-
 using rev =
     sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Revision;
 using asset =
@@ -43,17 +42,171 @@ using processor = sdbusplus::xyz::openbmc_project::Inventory::Item::server::Cpu;
 using Item = sdbusplus::xyz::openbmc_project::Inventory::server::Item;
 using association =
     sdbusplus::xyz::openbmc_project::Association::server::Definitions;
+    
+#ifdef SMBIOS_MDRV1
+
+// Definition follow smbios spec DSP0134 3.0.0
+static const std::map<uint8_t, std::string> cpuTypeTable = {
+    {0x1, "Other"},          {0x2, "Unknown"},       {0x3, "Central Processor"},
+    {0x4, "Math Processor"}, {0x5, "DSP Processor"}, {0x6, "Vodeo Processor"},
+};
 
 // Definition follow smbios spec DSP0134 3.0.0
 static const std::map<uint8_t, const char*> familyTable = {
     {0x1, "Other"},
     {0x2, "Unknown"},
     {0x10, "Pentium II Xeon processor"},
-    {0x2b, "Intel Atom processor"},
-    {0x2c, "Intel Core M processor"},
-    {0x2d, "Intel Core m3 processor"},
-    {0x2e, "Intel Core m5 processor"},
-    {0x2f, "Intel Core m7 processor"},
+    {0xa1, "Quad-Core Intel Xeon processor 3200 Series"},
+    {0xa2, "Dual-Core Intel Xeon processor 3000 Series"},
+    {0xa3, "Quad-Core Intel Xeon processor 5300 Series"},
+    {0xa4, "Dual-Core Intel Xeon processor 5100 Series"},
+    {0xa5, "Dual-Core Intel Xeon processor 5000 Series"},
+    {0xa6, "Dual-Core Intel Xeon processor LV"},
+    {0xa7, "Dual-Core Intel Xeon processor ULV"},
+    {0xa8, "Dual-Core Intel Xeon processor 7100 Series"},
+    {0xa9, "Quad-Core Intel Xeon processor 5400 Series"},
+    {0xaa, "Quad-Core Intel Xeon processor"},
+    {0xab, "Dual-Core Intel Xeon processor 5200 Series"},
+    {0xac, "Dual-Core Intel Xeon processor 7200 Series"},
+    {0xad, "Quad-Core Intel Xeon processor 7300 Series"},
+    {0xae, "Quad-Core Intel Xeon processor 7400 Series"},
+    {0xaf, "Multi-Core Intel Xeon processor 7400 Series"},
+    {0xb0, "Pentium III Xeon processor"},
+    {0xb3, "Intel Xeon processor"},
+    {0xb5, "Intel Xeon processor MP"},
+    {0xd6, "Multi-Core Intel Xeon processor"},
+    {0xd7, "Dual-Core Intel Xeon processor 3xxx Series"},
+    {0xd8, "Quad-Core Intel Xeon processor 3xxx Series"},
+    {0xd9, "VIA Nano Processor Family"},
+    {0xda, "Dual-Core Intel Xeon processor 5xxx Series"},
+    {0xdb, "Quad-Core Intel Xeon processor 5xxx Series"},
+    {0xdd, "Dual-Core Intel Xeon processor 7xxx Series"},
+    {0xde, "Quad-Core Intel Xeon processor 7xxx Series"},
+    {0xdf, "Multi-Core Intel Xeon processor 7xxx Series"},
+    {0xe0, "Multi-Core Intel Xeon processor 3400 Series"}
+
+};
+
+// Definition follow smbios spec DSP0134 3.0.0
+static const std::string characterTable[16]{"Reserved",
+                                            "Unknown",
+                                            "64-bit Capable",
+                                            "Multi-Core",
+                                            "Hardware Thread",
+                                            "Execute Protection",
+                                            "Enhanced Virtualization",
+                                            "Power/Performance Control",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved",
+                                            "Reserved"};
+
+class Cpu :
+    sdbusplus::server::object_t<processor, asset, location, connector, rev,
+                                Item, association>
+{
+  public:
+    Cpu() = delete;
+    Cpu(const Cpu &) = delete;
+    Cpu &operator=(const Cpu &) = delete;
+    Cpu(Cpu &&) = delete;
+    Cpu &operator=(Cpu &&) = delete;
+    ~Cpu() = default;
+
+    Cpu(sdbusplus::bus::bus &bus, const std::string &objPath,
+        const uint8_t &cpuId, struct ManagedDataRegion *region) :
+
+        sdbusplus::server::object_t<processor, asset, location, connector, rev,
+                                    Item, association>(
+            bus, objPath.c_str()),
+        cpuNum(cpuId), regionS(region)
+    {
+        infoUpdate();
+    }
+
+    void infoUpdate(void);
+
+/*
+    std::string processorSocket(std::string value) override;
+    std::string processorType(std::string value) override;
+    std::string processorFamily(std::string value) override;
+    std::string processorManufacturer(std::string value) override;
+    uint32_t processorId(uint32_t value) override;
+    std::string processorVersion(std::string value) override;
+    uint16_t processorMaxSpeed(uint16_t value) override;
+    std::string processorCharacteristics(std::string value) override;
+    uint16_t processorCoreCount(uint16_t value) override;
+    uint16_t processorThreadCount(uint16_t value) override;
+*/
+
+  private:
+    /** @brief Path of the group instance */
+    uint8_t cpuNum;
+
+    struct ManagedDataRegion *regionS;
+
+    struct ProcessorInfo
+    {
+        uint8_t type;
+        uint8_t length;
+        uint16_t handle;
+        uint8_t socketDesignation;
+        uint8_t processorType;
+        uint8_t family;
+        uint8_t manufacturer;
+        uint64_t id;
+        uint8_t version;
+        uint8_t voltage;
+        uint16_t exClock;
+        uint16_t maxSpeed;
+        uint16_t currSpeed;
+        uint8_t status;
+        uint8_t upgrade;
+        uint16_t l1Handle;
+        uint16_t l2Handle;
+        uint16_t l3Handle;
+        uint8_t serialNum;
+        uint8_t assetTag;
+        uint8_t partNum;
+        uint8_t coreCount;
+        uint8_t coreEnable;
+        uint8_t threadCount;
+        uint16_t characteristics;
+        uint16_t family2;
+        uint16_t coreCount2;
+        uint16_t coreEnable2;
+        uint16_t threadCount2;
+    } __attribute__((packed));
+
+    void socket(const uint8_t positionNum, const uint8_t structLen,
+                uint8_t* dataIn);
+    void family(const uint8_t family);
+    void manufacturer(const uint8_t positionNum, const uint8_t structLen,
+                      uint8_t* dataIn);
+    //void serialNumber(const uint8_t positionNum, const uint8_t structLen,
+    //                  uint8_t* dataIn);
+    //void partNumber(const uint8_t positionNum, const uint8_t structLen,
+    //                uint8_t* dataIn);
+    void version(const uint8_t positionNum, const uint8_t structLen,
+                 uint8_t* dataIn);
+    void characteristics(const uint16_t value);
+
+    //void cpuType(uint8_t value);
+};
+
+#elifdef SMBIOS_MDRV2
+
+
+
+// Definition follow smbios spec DSP0134 3.0.0
+static const std::map<uint8_t, const char*> familyTable = {
+    {0x1, "Other"},
+    {0x2, "Unknown"},
+    {0x10, "Pentium II Xeon processor"},
     {0xa1, "Quad-Core Intel Xeon processor 3200 Series"},
     {0xa2, "Dual-Core Intel Xeon processor 3000 Series"},
     {0xa3, "Quad-Core Intel Xeon processor 5300 Series"},
@@ -188,6 +341,7 @@ class Cpu :
     void characteristics(const uint16_t value);
 };
 
+#endif
 } // namespace smbios
 
 } // namespace phosphor

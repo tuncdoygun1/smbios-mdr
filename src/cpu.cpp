@@ -15,6 +15,9 @@
 */
 
 #include "cpu.hpp"
+#ifdef SMBIOS_MDRV1
+#include "mdrv1.hpp"
+#endif
 
 #include <bitset>
 #include <map>
@@ -29,20 +32,33 @@ void Cpu::socket(const uint8_t positionNum, const uint8_t structLen,
 {
     std::string result = positionToString(positionNum, structLen, dataIn);
 
+#ifdef SMBIOS_MDRV1
     processor::socket(result);
-
     location::locationCode(result);
+#elifdef SMBIOS_MDRV2
+    processor::socket(result);
+    location::locationCode(result);
+#endif
 }
 
 static constexpr uint8_t processorFamily2Indicator = 0xfe;
-void Cpu::family(const uint8_t family, const uint16_t family2)
+void Cpu::family(const uint8_t family
+#ifdef SMBIOS_MDRV2
+				, const uint16_t family2
+#endif
+				 )
 {
     std::map<uint8_t, const char*>::const_iterator it =
         familyTable.find(family);
     if (it == familyTable.end())
     {
+#ifdef SMBIOS_MDRV1
+    	processor::family("Unknown Processor Family");
+#elifdef SMBIOS_MDRV2
         processor::family("Unknown Processor Family");
+#endif
     }
+#ifdef SMBIOS_MDRV2
     else if (it->first == processorFamily2Indicator)
     {
         std::map<uint16_t, const char*>::const_iterator it2 =
@@ -57,10 +73,15 @@ void Cpu::family(const uint8_t family, const uint16_t family2)
             processor::effectiveFamily(family2);
         }
     }
+#endif
     else
     {
-        processor::family(it->second);
+#ifdef SMBIOS_MDRV1
+    	processor::family(it->second);
+#elifdef SMBIOS_MDRV2
+    	processor::family(it->second);
         processor::effectiveFamily(family);
+#endif
     }
 }
 
@@ -69,9 +90,14 @@ void Cpu::manufacturer(const uint8_t positionNum, const uint8_t structLen,
 {
     std::string result = positionToString(positionNum, structLen, dataIn);
 
+#ifdef SMBIOS_MDRV1
     asset::manufacturer(result);
+#elifdef SMBIOS_MDRV2
+    asset::manufacturer(result);
+#endif
 }
 
+#ifdef SMBIOS_MDRV2
 void Cpu::partNumber(const uint8_t positionNum, const uint8_t structLen,
                      uint8_t* dataIn)
 {
@@ -87,6 +113,7 @@ void Cpu::serialNumber(const uint8_t positionNum, const uint8_t structLen,
 
     asset::serialNumber(result);
 }
+#endif
 
 void Cpu::version(const uint8_t positionNum, const uint8_t structLen,
                   uint8_t* dataIn)
@@ -95,11 +122,30 @@ void Cpu::version(const uint8_t positionNum, const uint8_t structLen,
 
     result = positionToString(positionNum, structLen, dataIn);
 
+#ifdef SMBIOS_MDRV1
     rev::version(result);
+#elifdef SMBIOS_MDRV2
+    rev::version(result);
+#endif
 }
 
 void Cpu::characteristics(uint16_t value)
 {
+#ifdef SMBIOS_MDRV1
+	/*
+    std::string result = "";
+    for (uint8_t index = 0; index < (8 * sizeof(value)); index++)
+    {
+        if (value & 0x01)
+        {
+            result += characterTable[index];
+        }
+        value >>= 1;
+    }
+
+    processor::characteristics(result);
+    */
+#elifdef SMBIOS_MDRV2
     std::vector<processor::Capability> result;
     std::optional<processor::Capability> cap;
 
@@ -116,12 +162,17 @@ void Cpu::characteristics(uint16_t value)
     }
 
     processor::characteristics(result);
+#endif
 }
 
 static constexpr uint8_t maxOldVersionCount = 0xff;
 void Cpu::infoUpdate(void)
 {
+#ifdef SMBIOS_MDRV1
+	uint8_t *dataIn = regionS[0].regionData;
+#elifdef SMBIOS_MDRV2
     uint8_t* dataIn = storage;
+#endif
 
     dataIn = getSMBIOSTypePtr(dataIn, processorsType);
     if (dataIn == nullptr)
@@ -157,60 +208,22 @@ void Cpu::infoUpdate(void)
     present(true);
 
     // this class is for type CPU  //offset 5h
+#ifdef SMBIOS_MDRV1
+    family(cpuInfo->family);
+#elifdef SMBIOS_MDRV2
     family(cpuInfo->family, cpuInfo->family2); // offset 6h and 28h
+#endif
     manufacturer(cpuInfo->manufacturer, cpuInfo->length,
-                 dataIn); // offset 7h
-    id(cpuInfo->id);      // offset 8h
-
-    // Step, EffectiveFamily, EffectiveModel computation for Intel processors.
-    std::map<uint8_t, const char*>::const_iterator it =
-        familyTable.find(cpuInfo->family);
-    if (it != familyTable.end())
-    {
-        std::string familyStr = it->second;
-        if ((familyStr.find(" Xeon ") != std::string::npos) ||
-            (familyStr.find(" Intel ") != std::string::npos))
-        {
-            // Processor ID field
-            // SteppinID:   4;
-            // Model:       4;
-            // Family:      4;
-            // Type:        2;
-            // Reserved1:   2;
-            // XModel:      4;
-            // XFamily:     8;
-            // Reserved2:   4;
-            uint16_t cpuStep = cpuInfo->id & 0xf;
-            uint16_t cpuModel = (cpuInfo->id & 0xf0) >> 4;
-            uint16_t cpuFamily = (cpuInfo->id & 0xf00) >> 8;
-            uint16_t cpuXModel = (cpuInfo->id & 0xf0000) >> 16;
-            uint16_t cpuXFamily = (cpuInfo->id & 0xff00000) >> 20;
-            step(cpuStep);
-            if (cpuFamily == 0xf)
-            {
-                effectiveFamily(cpuXFamily + cpuFamily);
-            }
-            else
-            {
-                effectiveFamily(cpuFamily);
-            }
-            if (cpuFamily == 0x6 || cpuFamily == 0xf)
-            {
-                effectiveModel((cpuXModel << 4) | cpuModel);
-            }
-            else
-            {
-                effectiveModel(cpuModel);
-            }
-        }
-    }
-
+                 dataIn);                               // offset 7h
+    id(cpuInfo->id);                                    // offset 8h
     version(cpuInfo->version, cpuInfo->length, dataIn); // offset 10h
     maxSpeedInMhz(cpuInfo->maxSpeed);                   // offset 14h
+#ifdef SMBIOS_MDRV2
     serialNumber(cpuInfo->serialNum, cpuInfo->length,
                  dataIn); // offset 20h
     partNumber(cpuInfo->partNum, cpuInfo->length,
                dataIn);                          // offset 22h
+#endif
     if (cpuInfo->coreCount < maxOldVersionCount) // offset 23h or 2Ah
     {
         coreCount(cpuInfo->coreCount);
@@ -230,13 +243,14 @@ void Cpu::infoUpdate(void)
     }
 
     characteristics(cpuInfo->characteristics); // offset 26h
-
+#ifdef SMBIOS_MDRV2
     if (!motherboardPath.empty())
     {
         std::vector<std::tuple<std::string, std::string, std::string>> assocs;
         assocs.emplace_back("chassis", "processors", motherboardPath);
         association::associations(assocs);
     }
+#endif
 }
 
 } // namespace smbios
