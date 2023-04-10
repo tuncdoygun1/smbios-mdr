@@ -19,6 +19,74 @@
 #include <phosphor-logging/elog-errors.hpp>
 
 #include <array>
+#define SMBIOS_MDRV1
+
+#ifdef SMBIOS_MDRV1
+#include <map>
+
+static constexpr uint16_t mdrSMBIOSSize = 32 * 1024;    // 32K
+static constexpr uint16_t mdrAcpiTableSize = 32 * 1024; // 32K
+static constexpr uint16_t mdrMemMappingSize = 8 * 1024; // 8K
+static constexpr uint16_t mdrScsiBootSize = 8 * 1024;   // 8K
+static constexpr uint16_t mdrNvmeSize = 1 * 1024;       // 1K
+
+static constexpr uint16_t smbiosTableStorageSize = 0xffff;
+
+static constexpr uint8_t mdrVersion = 0x11; // MDR version 1.1
+
+static constexpr const char *smbiosPath = "/etc/smbios";
+static constexpr const char *mdrType1File = "/etc/smbios/smbios1";
+static constexpr const char *mdrType2File = "/etc/smbios/smbios2";
+static constexpr const char *mdrAcpiFile = "/etc/smbios/acpi";
+static constexpr const char *mdrMemMapFile = "/etc/smbios/memmapping";
+static constexpr const char *mdrScsiBootFile = "/etc/smbios/scsiboot";
+static constexpr const char *mdrNvmeFile = "/etc/smbios/nvme";
+
+typedef enum
+{
+    mdrNone = 0,
+    mdrSmbios = 1,
+    mdrAcpi = 2,
+    mdrMemMap = 3,
+    mdrScsiBoot = 4,
+    mdrNvme = 5,
+    maxMdrIndex = 6
+} MDRRegionIndex;
+
+typedef enum
+{
+    regionLockUnlocked = 0,
+    regionLockStrict,
+    regionLockPreemptable
+} MDRLockType;
+
+struct MDRState
+{
+    uint8_t mdrVersion;
+    uint8_t regionId;
+    uint8_t valid;
+    uint8_t updateCount;
+    uint8_t lockPolicy;
+    uint16_t regionLength;
+    uint16_t regionUsed;
+    uint8_t crc8;
+} __attribute__((packed));
+
+struct ManagedDataRegion
+{
+    const char *flashName;
+    uint8_t *regionData;
+    uint16_t msTimeout;
+    struct MDRState state;
+    uint8_t sessionId;
+} __attribute__((packed));
+
+struct BIOSInfo
+{
+    uint8_t biosVersion;
+};
+
+#elifdef SMBIOS_MDRV2
 
 static constexpr const char* mdrType2File = "/var/lib/smbios/smbios2";
 static constexpr const char* smbiosPath = "/var/lib/smbios";
@@ -155,6 +223,12 @@ struct EntryPointStructure30
     uint64_t structTableAddr;
 } __attribute__((packed));
 
+constexpr std::array<SMBIOSVersion, 3> supportedSMBIOSVersions{
+    SMBIOSVersion{3, 2}, SMBIOSVersion{3, 3}, SMBIOSVersion{3, 5}};
+    
+#endif
+
+
 static constexpr const char* cpuPath =
     "/xyz/openbmc_project/inventory/system/chassis/motherboard/cpu";
 
@@ -166,9 +240,6 @@ static constexpr const char* pciePath =
 
 static constexpr const char* systemPath =
     "/xyz/openbmc_project/inventory/system/chassis/motherboard/bios";
-
-constexpr std::array<SMBIOSVersion, 3> supportedSMBIOSVersions{
-    SMBIOSVersion{3, 2}, SMBIOSVersion{3, 3}, SMBIOSVersion{3, 5}};
 
 typedef enum
 {
@@ -229,7 +300,9 @@ static inline uint8_t* getSMBIOSTypePtr(uint8_t* smbiosDataIn, uint8_t typeId,
         uint32_t len = *(smbiosData + 1);
         if (*smbiosData != typeId)
         {
-
+#ifdef SMBIOS_MDRV1
+			uint32_t len = *(smbiosData + 1);
+#endif			
             smbiosData += len;
             while ((*smbiosData != '\0') || (*(smbiosData + 1) != '\0'))
             {
@@ -243,12 +316,14 @@ static inline uint8_t* getSMBIOSTypePtr(uint8_t* smbiosDataIn, uint8_t typeId,
             smbiosData += separateLen;
             continue;
         }
+#ifdef SMBIOS_MDRV2        
         if (len < size)
         {
             phosphor::logging::log<phosphor::logging::level::ERR>(
                 "Record size mismatch!");
             return nullptr;
         }
+#endif        
         return reinterpret_cast<uint8_t*>(smbiosData);
     }
     return nullptr;
@@ -257,7 +332,11 @@ static inline uint8_t* getSMBIOSTypePtr(uint8_t* smbiosDataIn, uint8_t typeId,
 static inline std::string positionToString(uint8_t positionNum,
                                            uint8_t structLen, uint8_t* dataIn)
 {
+#ifdef SMBIOS_MDRV1
+	if (dataIn == nullptr)
+#elifdef SMBIOS_MDRV2
     if (dataIn == nullptr || positionNum == 0)
+#endif    
     {
         return "";
     }
@@ -275,13 +354,21 @@ static inline std::string positionToString(uint8_t positionNum,
             limit--;
             // When target = dataIn + structLen + limit,
             // following target++ will be nullptr
+#ifdef SMBIOS_MDRV1
+			if (limit < 1)
+#elifdef SMBIOS_MDRV2
             if (limit < 1 || target == nullptr)
+#endif
             {
                 return "";
             }
         }
         target++;
+#ifdef SMBIOS_MDRV1
+		if (*target == '\0')
+#elifdef SMBIOS_MDRV2   
         if (target == nullptr || *target == '\0')
+#endif
         {
             return ""; // 0x00 0x00 means end of the entry.
         }
@@ -290,3 +377,15 @@ static inline std::string positionToString(uint8_t positionNum,
     std::string result = target;
     return result;
 }
+
+#ifdef SMBIOS_MDRV1
+// Find the specific string in smbios item
+static inline std::string seekString(uint8_t *smbiosDataIn, uint8_t stringOrder)
+{
+    if (smbiosDataIn == nullptr)
+        return "";
+    uint8_t len = *(smbiosDataIn + 1);
+
+    return positionToString(stringOrder, len, smbiosDataIn);
+}
+#endif
