@@ -18,7 +18,7 @@
 #include "cpu.hpp"
 #include "dimm.hpp"
 #include "pcieslot.hpp"
-#include "smbios_mdrv2.hpp"
+#include "smbios.hpp"
 #include "system.hpp"
 
 #include <sys/stat.h>
