@@ -15,7 +15,7 @@
 */
 
 #pragma once
-#include "smbios_mdrv2.hpp"
+#include "smbios.hpp"
 
 #include <xyz/openbmc_project/Common/UUID/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Revision/server.hpp>

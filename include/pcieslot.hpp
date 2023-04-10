@@ -1,5 +1,5 @@
 #pragma once
-#include "smbios_mdrv2.hpp"
+#include "smbios.hpp"
 
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
 #include <xyz/openbmc_project/Inventory/Connector/Embedded/server.hpp>
