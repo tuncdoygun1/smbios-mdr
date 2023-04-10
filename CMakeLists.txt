@@ -3,8 +3,17 @@ include (ExternalProject)
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
-set (DBUS_OBJECT_NAME "xyz/openbmc_project/Smbios/MDR_V2")
-set (DBUS_INTF_NAME "xyz.openbmc_project.Smbios.MDR_V2")
+
+option (SMBIOS_MDRV1 "Smbios mdrv1 support" ON)
+option (SMBIOS_MDRV2 "Smbios mdrv2 support" OFF)
+
+if (SMBIOS_MDRV1)
+	set (DBUS_OBJECT_NAME "xyz/openbmc_project/Smbios/MDR_V1")
+	set (DBUS_INTF_NAME "xyz.openbmc_project.Smbios.MDR_V1")
+elseif (SMBIOS_MDRV2)
+	set (DBUS_OBJECT_NAME "xyz/openbmc_project/Smbios/MDR_V2")
+	set (DBUS_INTF_NAME "xyz.openbmc_project.Smbios.MDR_V2")
+endif()
 
 # disable now to wa boost bug chriskohlhoff/asio#533
 # set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
@@ -39,32 +48,50 @@ add_definitions (-DBOOST_NO_RTTI)
 add_definitions (-DBOOST_NO_TYPEID)
 add_definitions (-DBOOST_ASIO_DISABLE_THREADS)
 
-set (SRC_FILES src/mdrv2.cpp src/mdrv2_main.cpp src/cpu.cpp src/dimm.cpp
+if (SMBIOS_MDRV1)
+#	set (SRC_FILES src/manager.cpp src/smbios-main.cpp src/timer.cpp src/cpu.cpp
+#   	src/dimm.cpp)
+	set (SRC_FILES src/cpu.cpp)
+elseif (SMBIOS_MDRV2)
+	set (SRC_FILES src/mdrv2.cpp src/mdrv2_main.cpp src/cpu.cpp src/dimm.cpp
      src/system.cpp src/pcieslot.cpp)
+endif()
 
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
-add_executable (smbiosmdrv2app ${SRC_FILES})
-target_link_libraries (smbiosmdrv2app ${SYSTEMD_LIBRARIES})
-target_link_libraries (smbiosmdrv2app ${DBUSINTERFACE_LIBRARIES})
-target_link_libraries (smbiosmdrv2app ${SDBUSPLUSPLUS_LIBRARIES})
-target_link_libraries (smbiosmdrv2app phosphor_logging)
+if (SMBIOS_MDRV1)
+	set (EXE_FILE_NAME smbiosapp)
+elseif (SMBIOS_MDRV2)
+	set (EXE_FILE_NAME smbiosmdrv2app)
+endif()
+                            
+add_executable (${EXE_FILE_NAME} ${SRC_FILES})
+target_link_libraries (${EXE_FILE_NAME} ${SYSTEMD_LIBRARIES})
+target_link_libraries (${EXE_FILE_NAME} ${DBUSINTERFACE_LIBRARIES})
+target_link_libraries (${EXE_FILE_NAME} ${SDBUSPLUSPLUS_LIBRARIES})
+target_link_libraries (${EXE_FILE_NAME} phosphor_logging)
 
 option (DIMM_DBUS "Expose DIMM D-Bus Interface" ON)
 
-if (DIMM_DBUS)
-    target_compile_definitions (smbiosmdrv2app PRIVATE DIMM_DBUS)
+if (DIMM_DBUS AND SMBIOS_MDRV2)
+    target_compile_definitions (${EXE_FILE_NAME} PRIVATE DIMM_DBUS)
 endif ()
 
-install (TARGETS smbiosmdrv2app DESTINATION bin)
+install (TARGETS ${EXE_FILE_NAME} DESTINATION bin)
 
-install (FILES  ${PROJECT_SOURCE_DIR}/service_files/smbios-mdrv2.service
+if (SMBIOS_MDRV1)
+	set (SERVICE_NAME smbios-mdrv1.service)
+elseif (SMBIOS_MDRV2)
+	set (SERVICE_NAME smbios-mdrv2.service)
+endif()
+
+install (FILES  ${PROJECT_SOURCE_DIR}/service_files/${SERVICE_NAME}
     DESTINATION /lib/systemd/system/)
 
 option (DIMM_ONLY_LOCATOR "Only use the DIMM number, and not the bank" OFF)
 
-if (DIMM_ONLY_LOCATOR)
-    target_compile_definitions (smbiosmdrv2app PRIVATE DIMM_ONLY_LOCATOR)
+if (DIMM_ONLY_LOCATOR AND SMBIOS_MDRV2)
+    target_compile_definitions (${EXE_FILE_NAME} PRIVATE DIMM_ONLY_LOCATOR)
 endif ()
 
 
@@ -87,7 +114,7 @@ if (CPU_INFO)
         add_dependencies (cpuinfoapp libpeci)
         externalproject_add (libpeci PREFIX ${CMAKE_BINARY_DIR}/libpeci
             GIT_REPOSITORY https://github.com/openbmc/libpeci.git
-            GIT_TAG 50959a23b48e4f5af9c7110fc78214ea27c6f078
+            GIT_TAG 6a00e9aa72f75d66eb8b9572c7fd3894f91c6bba
             INSTALL_COMMAND "")
 
         externalproject_get_property (libpeci SOURCE_DIR)
