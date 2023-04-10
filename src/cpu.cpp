@@ -32,13 +32,8 @@ void Cpu::socket(const uint8_t positionNum, const uint8_t structLen,
 {
     std::string result = positionToString(positionNum, structLen, dataIn);
 
-#ifdef SMBIOS_MDRV1
     processor::socket(result);
     location::locationCode(result);
-#elifdef SMBIOS_MDRV2
-    processor::socket(result);
-    location::locationCode(result);
-#endif
 }
 
 static constexpr uint8_t processorFamily2Indicator = 0xfe;
@@ -52,11 +47,7 @@ void Cpu::family(const uint8_t family
         familyTable.find(family);
     if (it == familyTable.end())
     {
-#ifdef SMBIOS_MDRV1
     	processor::family("Unknown Processor Family");
-#elifdef SMBIOS_MDRV2
-        processor::family("Unknown Processor Family");
-#endif
     }
 #ifdef SMBIOS_MDRV2
     else if (it->first == processorFamily2Indicator)
@@ -76,10 +67,8 @@ void Cpu::family(const uint8_t family
 #endif
     else
     {
-#ifdef SMBIOS_MDRV1
     	processor::family(it->second);
-#elifdef SMBIOS_MDRV2
-    	processor::family(it->second);
+#ifdef SMBIOS_MDRV2
         processor::effectiveFamily(family);
 #endif
     }
@@ -90,11 +79,7 @@ void Cpu::manufacturer(const uint8_t positionNum, const uint8_t structLen,
 {
     std::string result = positionToString(positionNum, structLen, dataIn);
 
-#ifdef SMBIOS_MDRV1
     asset::manufacturer(result);
-#elifdef SMBIOS_MDRV2
-    asset::manufacturer(result);
-#endif
 }
 
 #ifdef SMBIOS_MDRV2
@@ -122,11 +107,7 @@ void Cpu::version(const uint8_t positionNum, const uint8_t structLen,
 
     result = positionToString(positionNum, structLen, dataIn);
 
-#ifdef SMBIOS_MDRV1
     rev::version(result);
-#elifdef SMBIOS_MDRV2
-    rev::version(result);
-#endif
 }
 
 void Cpu::characteristics(uint16_t value)
