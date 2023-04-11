@@ -16,7 +16,11 @@
 
 #include "dimm.hpp"
 
+#ifdef SMBIOS_MDRV1
+#include "mdrv1.hpp"
+#elifdef SMBIOS_MDRV2
 #include "mdrv2.hpp"
+#endif
 
 #include <boost/algorithm/string.hpp>
 #include <phosphor-logging/elog-errors.hpp>
@@ -35,13 +39,19 @@ bool onlyDimmLocationCode = false;
 using DeviceType =
     sdbusplus::xyz::openbmc_project::Inventory::Item::server::Dimm::DeviceType;
 
+#ifdef SMBIOS_MDRV2
 using EccType =
     sdbusplus::xyz::openbmc_project::Inventory::Item::server::Dimm::Ecc;
+#endif
 
 static constexpr uint16_t maxOldDimmSize = 0x7fff;
 void Dimm::memoryInfoUpdate(void)
 {
-    uint8_t* dataIn = storage;
+#ifdef SMBIOS_MDRV1
+	uint8_t *dataIn = regionS[0].regionData;
+#elifdef SMBIOS_MDRV2
+	uint8_t* dataIn = storage;
+#endif
 
     dataIn = getSMBIOSTypePtr(dataIn, memoryDeviceType);
 
@@ -75,13 +85,13 @@ void Dimm::memoryInfoUpdate(void)
     {
         dimmSize(memoryInfo->size);
     }
-    // If the size is 0, no memory device is installed in the socket.
-    const auto isDimmPresent = memoryInfo->size > 0;
-    present(isDimmPresent);
-    functional(isDimmPresent);
 
+#ifdef SMBIOS_MDRV1
+    dimmDeviceLocator(memoryInfo->deviceLocator, memoryInfo->length, dataIn);
+#elifdef SMBIOS_MDRV2
     dimmDeviceLocator(memoryInfo->bankLocator, memoryInfo->deviceLocator,
                       memoryInfo->length, dataIn);
+#endif
     dimmType(memoryInfo->memoryType);
     dimmTypeDetail(memoryInfo->typeDetail);
     maxMemorySpeedInMhz(memoryInfo->speed);
@@ -91,6 +101,7 @@ void Dimm::memoryInfoUpdate(void)
     memoryAttributes(memoryInfo->attributes);
     memoryConfiguredSpeedInMhz(memoryInfo->confClockSpeed);
 
+#ifdef SMBIOS_MDRV2
     updateEccType(memoryInfo->phyArrayHandle);
 
     if (!motherboardPath.empty())
@@ -99,10 +110,12 @@ void Dimm::memoryInfoUpdate(void)
         assocs.emplace_back("chassis", "memories", motherboardPath);
         association::associations(assocs);
     }
+#endif
 
     return;
 }
 
+#ifdef SMBIOS_MDRV2
 void Dimm::updateEccType(uint16_t exPhyArrayHandle)
 {
     uint8_t* dataIn = storage;
@@ -145,6 +158,7 @@ EccType Dimm::ecc(EccType value)
     return sdbusplus::xyz::openbmc_project::Inventory::Item::server::Dimm::ecc(
         value);
 }
+#endif
 
 uint16_t Dimm::memoryDataWidth(uint16_t value)
 {
@@ -156,7 +170,7 @@ static constexpr uint16_t baseNewVersionDimmSize = 0x8000;
 static constexpr uint16_t dimmSizeUnit = 1024;
 void Dimm::dimmSize(const uint16_t size)
 {
-    uint32_t result = size & maxOldDimmSize;
+    size_t result = size & maxOldDimmSize;
     if (0 == (size & baseNewVersionDimmSize))
     {
         result = result * dimmSizeUnit;
@@ -164,7 +178,7 @@ void Dimm::dimmSize(const uint16_t size)
     memorySizeInKB(result);
 }
 
-void Dimm::dimmSizeExt(uint32_t size)
+void Dimm::dimmSizeExt(size_t size)
 {
     size = size * dimmSizeUnit;
     memorySizeInKB(size);
@@ -176,29 +190,43 @@ size_t Dimm::memorySizeInKB(size_t value)
         memorySizeInKB(value);
 }
 
-void Dimm::dimmDeviceLocator(const uint8_t bankLocatorPositionNum,
-                             const uint8_t deviceLocatorPositionNum,
-                             const uint8_t structLen, uint8_t* dataIn)
+#ifdef SMBIOS_MDRV1
+void Dimm::dimmDeviceLocator(uint8_t positionNum, uint8_t structLen,
+	                             uint8_t *dataIn)
 {
-    std::string deviceLocator =
-        positionToString(deviceLocatorPositionNum, structLen, dataIn);
-    std::string bankLocator =
-        positionToString(bankLocatorPositionNum, structLen, dataIn);
+	std::string result;
 
-    std::string result;
-    if (bankLocator.empty() || onlyDimmLocationCode)
-    {
-        result = deviceLocator;
-    }
-    else
-    {
-        result = bankLocator + " " + deviceLocator;
-    }
+	result = positionToString(positionNum, structLen, dataIn);
 
-    memoryDeviceLocator(result);
+	memoryDeviceLocator(result);
 
-    locationCode(result);
+	locationCode(result);
 }
+#elifdef SMBIOS_MDRV2
+void Dimm::dimmDeviceLocator(const uint8_t bankLocatorPositionNum,
+		                     const uint8_t deviceLocatorPositionNum,
+		                     const uint8_t structLen, uint8_t* dataIn)
+{
+	std::string deviceLocator =
+	        positionToString(deviceLocatorPositionNum, structLen, dataIn);
+	std::string bankLocator =
+	        positionToString(bankLocatorPositionNum, structLen, dataIn);
+
+	std::string result;
+	if (bankLocator.empty() || onlyDimmLocationCode)
+	{
+	    result = deviceLocator;
+	}
+	else
+	{
+	    result = bankLocator + " " + deviceLocator;
+	}
+
+	memoryDeviceLocator(result);
+
+	locationCode(result);
+}
+#endif
 
 std::string Dimm::memoryDeviceLocator(std::string value)
 {
@@ -256,14 +284,19 @@ void Dimm::dimmManufacturer(const uint8_t positionNum, const uint8_t structLen,
 {
     std::string result = positionToString(positionNum, structLen, dataIn);
 
+    bool val = true;
     if (result == "NO DIMM")
     {
+        val = false;
+
         // No dimm presence so making manufacturer value as "" (instead of
         // NO DIMM - as there won't be any manufacturer for DIMM which is not
         // present).
         result = "";
     }
     manufacturer(result);
+    present(val);
+    functional(val);
 }
 
 std::string Dimm::manufacturer(std::string value)
