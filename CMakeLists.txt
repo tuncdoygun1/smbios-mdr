@@ -49,9 +49,8 @@ add_definitions (-DBOOST_NO_TYPEID)
 add_definitions (-DBOOST_ASIO_DISABLE_THREADS)
 
 if (SMBIOS_MDRV1)
-#	set (SRC_FILES src/manager.cpp src/smbios-main.cpp src/timer.cpp src/cpu.cpp
-#   	src/dimm.cpp)
-	set (SRC_FILES src/cpu.cpp src/dimm.cpp)
+	set (SRC_FILES src/mdrv1.cpp src/mdrv1_main.cpp src/timer.cpp src/cpu.cpp
+   	src/dimm.cpp)
 elseif (SMBIOS_MDRV2)
 	set (SRC_FILES src/mdrv2.cpp src/mdrv2_main.cpp src/cpu.cpp src/dimm.cpp
      src/system.cpp src/pcieslot.cpp)
